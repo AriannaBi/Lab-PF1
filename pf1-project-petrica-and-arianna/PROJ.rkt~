@@ -1,0 +1,564 @@
+#lang racket
+(require 2htdp/image)
+(require 2htdp/universe)
+
+(define-struct world-game [canvas maze player])
+(define-struct player [x y dx dy])
+(define-struct wall [x y])
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define LOGO (bitmap "logo.png"))
+(define WIDTH 1000)
+(define HEIGHT 1000)
+(define SCALE 10)
+(define BACKGROUND-COLOR 'red);;;
+(define COLUMNS (/ WIDTH SCALE))
+(define ROWS  (/ HEIGHT SCALE))
+(define CANVAS (rectangle WIDTH HEIGHT 'solid BACKGROUND-COLOR));;;
+(define TOTAL-CELLS (* SCALE SCALE))
+;;------------------------------LIST SECTION--------------------------------
+;;' (0 1 2 3 4 5.... 99)
+(define (list-of-cell i)
+  (cond
+    [(= i 99) (drop-right (list i) 0)] 
+    [else
+     (append (list i) (list-of-cell (add1 i)))]))
+
+(define LIST-OF-NUMBER-CELLS (list-of-cell 0))
+
+
+;;'(0 0 0 0 0... 0)
+(define (list-of-visited i)
+  (cond
+    [(= i 99) (drop-right (list 0) 0)]  
+    [else
+     (append (list 0) (list-of-visited (add1 i)))]))
+
+(define LIST-OF-VISITED (list-of-visited 0))
+
+;; '((1 1 1 1) (1 1 1 1) ... (1 1 1 1)) (UP RIGHT DOWN LEFT)  0 for closed, 1 for open 
+(define (list-of-walls i)
+  (cond
+    [(= i 100) (drop-right (list (random 2) (random 2) (random 2) (random 2)) 4)]  
+    [else
+     (append (list (list (random 2) (random 2) (random 2) (random 2))) (list-of-walls (add1 i)))]))
+
+(define LIST-OF-WALLS (list-of-walls 0))
+
+; Number Lista -> Lista
+; '( (0 x 0 0) (0 0 0 x)) (posizione esempio)
+(define (list-R l a)
+  (cond
+    [(= a 98) (list (list-set (list-ref l a) 3 (list-ref (list-ref l a) 1)))]
+    [else
+     (append (list (list-set (list-ref l (+ a 1)) 3 (list-ref (list-ref l a) 1))) (list-R l (add1 a)))]))
+
+(define LIST-R
+  (append (list (list-ref LIST-OF-WALLS 0)) (list-R LIST-OF-WALLS 0)))
+
+
+; Number Lista -> Lista
+; '( (0 0 Y 0) (Y 0 0 0)) (posizione esempio)
+(define (list-C l a)
+  (cond
+         [(= a 89)  (list (list-set (list-ref l (+ a 10)) 0 (list-ref (list-ref l a) 2)))]
+    [else
+     (append (list (list-set (list-ref l (+ a 10)) 0 (list-ref (list-ref l a) 2))) (list-C l (add1 a)))]))
+
+
+(define LIST-C
+ (append (drop-right LIST-R 90) (list-C LIST-R 0)))
+
+
+;;------------------------------END OF LIST SECTION-------------------------
+
+
+(define (add-player player)
+  (place-image
+   (text "istruzione gioco " 15 'black)
+   1350
+   330
+   (place-image
+    (text "The rules of the maze game" 25 'black)
+    1350
+    300
+    (place-image
+     (text "λαβύρινθος" 55 'red)
+     1350
+     150
+     (place-image
+      LOGO
+      1350
+      70
+      (place-image
+       (circle 10 'solid 'red)
+       (player-x player)
+       (player-y player)
+       (place-image
+        GRID
+        500
+        500
+        (empty-scene 1999 1900 'grey))))))))
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+(define (bounce player) 
+  (make-player
+   (player-x player)
+   (player-y player)
+   (invert-velocity-x (player-x player) 
+                      (cond
+                        [(<= (player-x player) 10)
+                             0]
+                        [else
+                         (if (= (list-ref (list-ref LIST-C (left 0
+                                                                 (player-x player)
+                                                                 (player-y player)
+                                                                 0)) 3)
+                                0) 
+                             (+ (range-left player (left
+                                                    0
+                                                    (player-x player)
+                                                    (player-y player)
+                                                    0) 0) 20)
+                             0)])
+                      (cond
+                        [(>= (player-x player) 990)
+                             1000]
+                        [else
+                         (if (= (list-ref (list-ref LIST-C (left 0
+                                                                 (player-x player)
+                                                                 (player-y player)
+                                                                 0)) 1)
+                                0)
+                             (- (range-right player (left
+                                                     0
+                                                     (player-x player)
+                                                     (player-y player)
+                                                     0) 0) 20)
+                             990)])
+                      (player-dx player))
+   (invert-velocity-y (player-y player)
+                      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x player)
+                                         (player-y player)
+                                         0)) 0)
+                             0)
+                          (+ (range-up (player-y player)) 0)
+                          0)
+                      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x player)
+                                         (player-y player)
+                                         0)) 2)
+                             0)
+                          (- (range-down (player-y player)) 20)
+                          990)
+                      (player-dy player))))
+
+
+(define (ensure-in-bounds player)
+  (make-player (clamp (player-x player)
+                      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x player)
+                                         (player-y player)
+                                         0)) 3)
+                             0)
+                      (+ (range-left player (left
+                                          0
+                                          (player-x player)
+                                          (player-y player)
+                                          0) 0) 10)
+                      10)
+                      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x player)
+                                         (player-y player)
+                                         0)) 1)
+                             0)
+                      (- (range-right player (left
+                                           0
+                                           (player-x player)
+                                           (player-y player)
+                                           0) 0) 10)
+                      990))
+               (clamp (player-y player)
+                      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x player)
+                                         (player-y player)
+                                         0)) 0)
+                             0)
+                          (+ (range-up (player-y player)) 10)
+                          10)
+                      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x player)
+                                         (player-y player)
+                                         0)) 2)
+                             0)
+                          (- (range-down (player-y player)) 10)
+                          990))
+               (player-dx player)
+               (player-dy player))) 
+
+;; CHECK IF THE V VALUE IS BETWEEN THE LOWER AND THE UPPER LIMIT
+
+
+
+(define (invert-velocity-x v lower upper dv) 
+  (cond [(< v lower) (- dv)]
+        [(> v upper) (- dv)]
+        [else  dv]))
+
+(define (invert-velocity-y v lower upper dv)
+  (cond [(< v lower)
+         (- dv)]
+        [(> v upper) (- dv)]
+        [else dv])) 
+;;;;;;;;;;;;;;
+
+
+(define (clamp value lower upper)
+  (cond [(< value lower) lower]
+        [(> value upper) upper]
+        [else value])) 
+ 
+
+
+(define (move-player player)
+  (ensure-in-bounds
+   (bounce
+    (make-player (+ (player-x player) (player-dx player))
+                 (+ (+ (player-y player) (player-dy player)) 2) 
+                 (player-dx player)
+                 (if (>= (player-dy player) 10)
+                     (player-dy player)
+                     (+ (player-dy player) 1))))))
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(define (right a x y index)
+  (cond
+    [(= a 1000)
+     #false]
+    [else
+     (if (and (>= x a) (<= x (+ a 100)))
+           (if (and (>= y 0) (<= y 100))
+               (+ (/ a 100) (sub1 index))
+               (+ (/ a 100) (sub1 index)))
+           (right (+ a 100) x  y index))])) 
+
+
+(define (left a x y index)
+  (cond
+    [(> index 0)
+     (right 0 x y index)]
+    [else
+     (cond
+       [(= a 1000)
+        #false]
+       [else
+        (if (and (>= y a) (<= y (+ a 100)))
+            (left a x y (add1 (* 10  (/ a 100))))
+            (left (+ a 100) x y index))])]))
+
+
+
+
+
+
+(define (color-picker-columns x y) 
+  (cond
+    [(>= y 100)
+     (if ( = (list-ref (list-ref LIST-C
+                                 (if
+                                  (= (- (+ (/ x 100) (/ y 10)) 1) 100)
+                                  99
+                                  (- (+ (/ x 100) (/ y 10)) 1))) 1) 1)
+         'black
+         'white)]
+    [else
+     (if ( = (list-ref (list-ref LIST-C (- (/ x 100) 1)) 1) 1)
+         'black
+         'white)]))
+
+
+(define (color-picker-rows x y)
+  (cond  
+    [(>= y 100)
+     (if ( = (list-ref (list-ref LIST-C
+                                 (left 0 x y 0)) 2) 1)
+         'black
+         'white)]
+    [else
+     (if ( = (list-ref (list-ref LIST-C (left 0 x y 0)) 2) 1)
+         'black
+         'white)]))
+
+
+
+; add-line | img | x1 | y1 | x2 | y2 | background(img)
+(define (create-cols x y)
+  (add-line
+   (if (< y 900)
+       (create-cols x (+ y 100))
+       (add-line 
+        (if (< x WIDTH)
+            (create-cols (+ x COLUMNS) 0)
+            (add-line
+             (empty-scene WIDTH HEIGHT 'black)
+             x
+             (- (/ HEIGHT 100) SCALE)
+             x
+             y
+             (make-pen "transparent" 0 "solid" 'butt "round")))
+        x
+        (+ (/ HEIGHT 100) y)
+        x
+        y
+       (make-pen (color-picker-columns x y) 5 "solid" 'butt "round")))
+   x
+   y
+   x
+   (+ (/ HEIGHT SCALE) y)
+   (make-pen (color-picker-columns x y) 5 "solid" 'butt "round")))
+
+
+
+
+(define (create-rows x y)
+  (add-line
+   (if (< y 900)
+       (create-rows x (+ y 100))
+       (add-line 
+        (if (< x HEIGHT)
+            (create-rows (+ x ROWS) 0)
+            (add-line
+             (empty-scene WIDTH HEIGHT 'transparent)
+             x
+             (- (/ HEIGHT 100) SCALE)
+             (/ WIDTH SCALE)
+             y
+             (make-pen "transparent" 0 "solid" 'butt "round")))
+        x
+        y
+        (/ WIDTH SCALE)
+        y
+        (make-pen (color-picker-rows x y) 5 "solid" 'butt "round")))
+   x
+   y
+   (/ WIDTH SCALE)
+   y
+   (make-pen (color-picker-rows x y) 5 "solid" 'butt "round")))
+
+
+
+
+
+;;;;;;;;HO BISOGNO DI UNA LISTA DI LISTE CON TUTTI I LIMITI, PER ESEMP DA 0 A 90, DA 3 A 93.
+
+(define (list-of-ranges i R)
+  (cond
+    
+    [(= R 10)(drop-right (list (+ (* 10 i) R)) 1)]
+
+    [else
+     (cond
+       [(= i 10) (list-of-ranges 0 (add1 R))] 
+       [else
+        (append (list
+                   (+ (* 10 i) R)) (list-of-ranges (add1 i) R))])]))
+
+(define LIST-OF-RANGES (list-of-ranges 0 0))
+
+
+
+;;;; da controllare
+
+
+(define (range-right w pos i)
+     (cond
+       [(= (list-ref LIST-OF-RANGES i) (left 0
+                                          (player-x w)
+                                          (player-y w)
+                                          0))
+        (cond
+          [(and (>= i 0) (<= i 9))
+           100]
+          [(and (>= i 10) (<= i 19))
+           200]
+          [(and (>= i 20) (<= i 29))
+           300]
+          [(and (>= i 30) (<= i 39))
+           400]
+          [(and (>= i 40) (<= i 49))
+           500]
+          [(and (>= i 50) (<= i 59))
+           600]
+          [(and (>= i 60) (<= i 69))
+           700]
+          [(and (>= i 70) (<= i 79))
+           800]
+          [(and (>= i 80) (<= i 89))
+           900]
+          [(and (>= i 90) (<= i 99))
+           1000])]
+        [else
+         (range-right w pos (add1 i))]))
+
+(define (range-down i)
+  (cond
+    [(and (>= i 0) (<= i 100))
+     100]
+    [(and (>= i 100) (<= i 200))
+     200]
+    [(and (>= i 200) (<= i 300))
+     300]
+    [(and (>= i 300) (<= i 400))
+     400]
+    [(and (>= i 400) (<= i 500))
+     500]
+    [(and (>= i 500) (<= i 600))
+     600]
+    [(and (>= i 600) (<= i 700))
+     700]
+    [(and (>= i 700) (<= i 800))
+     800]
+    [(and (>= i 800) (<= i 900))
+     900]
+    [(and (>= i 900) (<= i 1000))
+     1000]))
+
+
+(define (range-left w pos i)
+  (cond
+    [(= (list-ref LIST-OF-RANGES i) (left 0
+                                         (player-x w)
+                                         (player-y w)
+                                         0))
+     (cond
+       [(and (>= i 0) (<= i 9))
+        0]
+       [(and (>= i 10) (<= i 19))
+        100]
+       [(and (>= i 20) (<= i 29))
+        200]
+       [(and (>= i 30) (<= i 39))
+        300]
+       [(and (>= i 40) (<= i 49))
+        400]
+       [(and (>= i 50) (<= i 59))
+        500]
+       [(and (>= i 60) (<= i 69))
+        600]
+       [(and (>= i 70) (<= i 79))
+        700]
+       [(and (>= i 80) (<= i 89))
+        800]
+       [(and (>= i 90) (<= i 99))
+        900])]
+    [else
+     (range-left w pos (add1 i))]))
+
+
+
+
+(define (range-up i)
+  (cond
+    [(and (>= i 0) (< i 100))
+     0]
+    [(and (>= i 100) (< i 200))
+     100]
+    [(and (>= i 200) (< i 300))
+     200]
+    [(and (>= i 300) (< i 400))
+     300]
+    [(and (>= i 400) (< i 500))
+     400]
+    [(and (>= i 500) (< i 600))
+     500]
+    [(and (>= i 600) (< i 700))
+     600]
+    [(and (>= i 700) (< i 800))
+     700]
+    [(and (>= i 800) (< i 900))
+     800]
+    [(and (>= i 900) (<= i 1000))
+     900]))
+
+
+
+  
+(define GRID
+  (place-image
+   (create-rows 0 0)
+   (/ WIDTH 2)
+   (/ HEIGHT 2)
+   (create-cols 100 0)))
+
+
+(define (handle-key w key)
+  (cond
+    [(string=? key "up")
+     (make-player
+      (player-x w) 
+      (- (player-y w) 5)
+      (player-dx w)
+      (- (player-dy w) 5))]
+    
+    [(string=? key "down")
+     (make-player
+      (player-x w)
+      (if (= (list-ref (list-ref LIST-C (left 0
+                                         (player-x w)
+                                         (player-y w)
+                                         0)) 2)
+                             0)
+          (if (>= (player-y w) (- (range-down (player-y w)) 10))
+              (- (range-down (player-y w)) 10)
+              (+ (player-y w) 5))
+          (+ (player-y w) 5))
+      (player-dx w)
+      0)]
+    
+    [(string=? key "left")
+     (make-player
+      (- (player-x w) 5)
+      (player-y w)
+      (sub1 (player-dx w))
+      (player-dy w))]
+    
+    [(string=? key "right")
+     (make-player
+      (+ (player-x w) 5)
+      (player-y w)
+      (add1 (player-dx w))
+      (player-dy w))]
+    
+    [(string=? key "r")
+     INITIAL]
+    
+    [(string=? key "escape")
+     (exit)]
+    
+    [else w]))
+
+
+(define INITIAL (make-player 50 50 0 0))
+ 
+(define (main initial)
+  (big-bang initial
+    [display-mode 'fullscreen]
+    [to-draw add-player]
+    [on-tick move-player ]
+    [on-key handle-key]))
+ 
+(main INITIAL)
